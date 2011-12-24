@@ -1,9 +1,9 @@
-name = Media Internet Sources
-description = Provides an API for accessing media on various internet services
+name = File entity
+description = "Extends Drupal file entities to be fieldable and viewable."
 package = Media
 core = 7.x
-dependencies[] = media
-files[] = media_internet.module
+dependencies[] = field
+dependencies[] = ctools
 
 ; Information added by drupal.org packaging script on 2011-10-12
 version = "7.x-1.0-rc2"

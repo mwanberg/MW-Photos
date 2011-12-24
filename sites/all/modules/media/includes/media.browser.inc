@@ -2,30 +2,13 @@
 
 /**
  * @file
- * Summon plugins and render the media browser.
- */
-
-/**
- * Media browser page callback.
+ * Media Browser page callback
  */
 function media_browser($selected = NULL) {
   $output = array();
   $output['#attached']['library'][] = array('media', 'media_browser_page');
 
-  // Build out browser settings. Permissions- and security-related behaviors
-  // should not rely on these parameters, since they come from the HTTP query.
-  // @TODO make sure we treat parameters as user input.
-  $params = drupal_get_query_parameters() + array(
-    'types' => array(),
-    'multiselect' => FALSE,
-  );
-
-  // Transform text 'true' and 'false' to actual booleans.
-  foreach ($params as $k => $v) {
-    if ($v === 'true') { $params[$k] = TRUE; }
-    elseif ($v === 'false') { $params[$k] = FALSE; }
-  }
-
+  $params = drupal_get_query_parameters();
   array_walk_recursive($params, '_media_recursive_check_plain');
   $params = media_set_browser_params($params);
 
@@ -46,10 +29,18 @@ function media_browser($selected = NULL) {
     return $output;
   }
 
-  ctools_include('plugins');
-  $plugins = ctools_get_plugins('media', 'browser');
+  // Normal browser operation.
+  foreach (module_implements('media_browser_plugin_info') as $module) {
+    foreach (module_invoke($module, 'media_browser_plugin_info') as $key => $plugin_data) {
+      $plugins[$key] = $plugin_data + array(
+        '#module' => $module,
+        '#weight' => 0,
+      );
+      $plugins[$key]['#weight'] += count($plugins)/1000;
+    }
+  }
 
-  // Allow parameters to provide a list of enabled or disabled media browser plugins.
+  // Only the plugins in this array are loaded.
   if (!empty($params['enabledPlugins'])) {
     $plugins = array_intersect_key($plugins, array_fill_keys($params['enabledPlugins'], 1));
   }
@@ -57,56 +48,14 @@ function media_browser($selected = NULL) {
     $plugins = array_diff_key($plugins, array_fill_keys($params['disabledPlugins'], 1));
   }
 
-  // Render plugins.
-  $plugin_output = array();
   foreach ($plugins as $key => &$plugin) {
-    if ($plugin_class = ctools_plugin_get_class($plugin, 'handler')) {
-      $access = TRUE;
-      if (isset($plugin['access callback']) && ($callback = $plugin['access callback']) && function_exists($callback)) {
-        $arguments = (isset($plugin['access arguments']) ? $plugin['access arguments'] : array());
-        $access = call_user_func_array($callback, $arguments);
-      }
-      if ($access) {
-        $plugin_obj = new $plugin_class($plugin, $params);
-        $plugin_output[$key] = $plugin_obj->view() + array(
-          '#title' => $plugin['title'],
-          '#weight' => isset($plugin['weight']) ? $plugin['weight'] : 0,
-        );
-      }
-    }
-
-    // We need to get a submit and cancel button on each tab. If the plugin
-    // is not returning a form element we need to add a submit button.
-    // This is a fairly broad assumption.
-    if (empty($plugin_output[$key]['#form']) && ! empty($plugin_output[$key]['#markup'])) {
-      $plugin_output[$key]['#markup'] .= l(t('Submit'), '', array(
-        'attributes' => array('class' => array('button', 'fake-submit', $key))
-      ));
-      $plugin_output[$key]['#markup'] .= l(t('Cancel'), '', array(
-      'attributes' => array('class' => array('button', 'fake-cancel', $key))
-      ));
-    }
-
-    // I'm not sure if it is ever the case that a plugin form will ever have
-    // the correct cancel button so we add it here. Put it inline with the
-    // current submit button. This is a fairly broad assumption.
-    if (! empty($plugin_output[$key]['form'])) {
-      $button = l(t('Cancel'), '', array('attributes' => array('class' => array('button', 'fake-cancel', $key))));
-      if (! empty($plugin_output[$key]['form'][0]['submit']['#suffix'])) {
-        $plugin_output[$key]['form'][0]['submit']['#suffix'] .= $button;
-      }
-      else {
-        $plugin_output[$key]['form'][0]['submit']['#suffix'] = $button;
-      }
-
-    }
-
+    $plugin += module_invoke($plugin['#module'], 'media_browser_plugin_view', $key, $params);
   }
 
   // Allow modules to change the tab names or whatever else they want to change
   // before we render.  Perhaps this should be an alter on the theming function
   // that we should write to be making the tabs.
-  drupal_alter('media_browser_plugins', $plugin_output);
+  drupal_alter('media_browser_plugins', $plugins);
 
   $tabs = array(); // List of tabs to render.
 
@@ -114,15 +63,15 @@ function media_browser($selected = NULL) {
   $browser_settings =& $settings['media']['browser'];
 
   //@todo: replace with Tabs module if it gets upgraded.
-  foreach (element_children($plugin_output, TRUE) as $key) {
-    $plugin =& $plugin_output[$key];
+  foreach (element_children($plugins, TRUE) as $key) {
+    $plugin =& $plugins[$key];
 
     //Add any JS settings
     $browser_settings[$key] = isset($plugin['#settings']) ? $plugin['#settings'] : array();
 
     // If this is a "ajax" style tab, add the href, otherwise an id.
     $href = isset($plugin['#callback']) ? $plugin['#callback'] : "#media-tab-$key";
-    $tabs[] = "<a href='$href'><span>" . check_plain($plugins[$key]['title']) . "</span></a>";
+    $tabs[] = "<a href='$href'><span>{$plugin['#title']}</span></a>";
 
     // Create a div for each tab's content.
     $plugin['#prefix'] = <<<EOS
@@ -141,10 +90,10 @@ EOS;
     '#suffix' => '</div>',
   );
   $output['tabset']['list'] = array(
-    '#markup' => theme('item_list', array('items' => $tabs)),
+    '#markup' => '<ul><li>' . implode('</li><li>', $tabs) . '</li></ul>'
   );
 
-  $output['tabset']['plugins'] = $plugin_output;
+  $output['tabset']['plugins'] = $plugins;
   return $output;
 }
 
@@ -186,8 +135,6 @@ function media_get_browser_params() {
 
 /**
  * AJAX Callback function to return a list of media files
- *
- * @TODO this should probably live with the 'library' media browser plugin.
  */
 function media_browser_list() {
   $params = drupal_get_query_parameters();
@@ -236,7 +183,7 @@ function media_browser_list() {
   // @todo Implement granular editorial access: http://drupal.org/node/696970.
   //   In the meantime, protect information about private files from being
   //   discovered by unprivileged users. See also media_view_page().
-  if (!user_access('administer files')) {
+  if (!user_access('administer media')) {
     $query->condition('f.uri', db_like('private://') . '%', 'NOT LIKE');
   }
 
@@ -254,6 +201,90 @@ function media_browser_list() {
 
   drupal_json_output(array('media' => array_values($files)));
   exit();
+}
+
+/**
+ * Implements hook_media_browser_plugin_info().
+ */
+function media_media_browser_plugin_info() {
+  $plugins = array();
+
+  // @TODO: Should we add a permission around this?
+  $plugins['library'] = array(
+    '#weight' => 10,
+  );
+
+  if (user_access('administer media') || user_access('edit media')) {
+    $plugins['upload'] = array(
+      '#weight' => -10,
+    );
+  }
+  return $plugins;
+}
+
+/**
+ * Implementaion of hook_media_browser_plugin_view().
+ */
+function media_media_browser_plugin_view($plugin_name, $params) {
+  $path = drupal_get_path('module', 'media');
+
+  module_load_include('inc', 'media', 'includes/media.admin');
+  module_load_include('inc', 'media', 'includes/media.pages');
+
+  $params += array(
+    'types' => array(),
+    'multiselect' => FALSE,
+  );
+
+  // The multiselect parameter is a string.  So we check to see if it is set and
+  // adjust the local variable accordingly.
+  if ($params['multiselect'] != 'false' && $params['multiselect'] !== FALSE) {
+    $params['multiselect'] = TRUE;
+  }
+
+  $redirect = array('media/browser', array('query' => array('render' => 'media-popup')));
+  switch ($plugin_name) {
+    case 'upload':
+      $attached = array();
+      if ($params['multiselect'] && module_exists('plupload')) {
+        $upload_form_id = 'media_add_upload_multiple';
+        $attached['js'] = array($path . '/js/plugins/media.upload_multiple.js');
+      }
+      else {
+        $upload_form_id = 'media_add_upload';
+      }
+
+      $upload_form = drupal_get_form($upload_form_id, $params);
+      return array(
+        '#title' => t('Upload'),
+        'form' => array($upload_form),
+        '#attached' => $attached,
+      );
+      break;
+    case 'library':
+      return array(
+        '#title' => t('Library'),
+        '#attached' => array(
+          'js' => array(
+            $path . '/js/plugins/media.library.js',
+          ),
+          'css' => array(
+            //@todo: should move this.
+            $path . '/js/plugins/media.library.css',
+          ),
+        ),
+        '#settings' => array(
+          'viewMode' => 'thumbnails',
+          'getMediaUrl' => url('media/browser/list'),
+        // We should probably change this to load dynamically when requested
+        // via the JS file.
+        ) + $params,
+        '#markup' => '<div id="container"><div id="scrollbox"><ul id="media-browser-library-list" class="media-list-thumbnails"></ul><div id="status"></div></div></div>',
+      );
+    break;
+  }
+
+  return array();
 }
 
 /**
@@ -397,68 +428,4 @@ function media_browser_build_media_item($file) {
   $preview = media_get_thumbnail_preview($file);
   $file->preview = drupal_render($preview);
   $file->url = file_create_url($file->uri);
-}
-
-/**
- * Base class for media browser plugins.
- *
- * This is basically just API documentation.
- */
-class MediaBrowserPlugin {
-
-  // Plugin info array.
-  var $info;
-
-  // Browser instance parameters.
-  var $params;
-
-  /**
-   * Set up the plugin class.
-   *
-   * @param $info
-   *   An array of plugin info from hook_media_browser_plugin_info()
-   *   implementations.
-   * @param $params
-   *   An array of parameters which came in is $_GET['params']. The expected
-   *   parameters are still being defined.
-   *   - types: array of media types to support
-   *   - multiselect: boolean; TRUE enables multiselect
-   */
-  function __construct($info, $params) {
-    $this->info = $info;
-    $this->params = $params;
-  }
-
-  /**
-   * Provide a render array to display the plugin in a media browser.
-   *
-   * This render array will be a jQuery tab in the media browser.
-   *
-   * Some elements are special:
-   *  - #settings: Drupal.settings.media.browser.$key (where key is the array key).
-   *  - #callback: If provided, will make the tab an "ajax" tab.
-   *
-   * Example:
-   * @code
-   *  return array(
-   *    '#attached' => array(
-   *      'js' => array(
-   *         drupal_get_path('module', 'media') . '/js/plugins/media.library.js',
-   *       ),
-   *     ),
-   *     '#settings' => array(
-   *       'viewMode' => 'thumbnails',
-   *       'getMediaUrl' => url('media/browser/list'),
-   *     ),
-   *     '#markup' => '<div>Library goes here</div>',
-   * );
-   * @endcode
-   *
-   * @return
-   *  Renderable array.
-   */
-  function view() {
-    return array('#markup' => '');
-  }
-
 }
