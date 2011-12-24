@@ -1,1 +1,105 @@
 /* This file will hold the main styles for your website. */
+
+
+/*
+ * By Region
+ */
+
+
+/* Header */
+
+.region-branding {
+  margin: 0 0 0em 0;
+}
+
+.site-name-slogan {
+  text-align: center;
+  width: 100%;
+}
+
+
+/* Main menu */
+
+.region-menu {
+  background: #f2f2f2;
+  border-bottom: 1px solid #e8e8e8;
+  border-top: 1px solid #e8e8e8;
+  font-weight: bold;
+  margin-bottom: 2em;
+  margin-top: 1.5em;
+  padding: 1em;
+  width: 100%;
+}
+
+
+/* Preface */
+
+.region-preface-first-inner {
+  background: #f2f2f2;
+  margin-bottom: 2em;
+  padding: 1em 2em;
+}
+
+.zone-preface h2 {
+  font-size: 2.5em;
+}
+
+
+/* Content area */
+
+.region-content {
+  padding: 0 1em 3em 1em;
+}
+
+
+/*
+ * Site sections
+ */
+
+/* Galleries */
+
+.node-media-gallery .node-links {
+  display: none;
+}
+
+
+/* Comments */
+
+.node-media-gallery .comment-wrapper {
+  background: #f2f2f2;
+  margin-bottom: 2em;
+  padding: 1em 2em;
+}
+
+.node-media-gallery .comment {
+  border-top: 2px solid #d6d6d6;
+  margin: 0em 0;
+  padding: 2em 0;
+}
+
+.node-media-gallery .comment footer {
+  font-weight: bold;
+  margin: 0 0 .8em 0;
+}
+
+.node-media-gallery .title.comment-form {
+  border-top: 2px solid #d6d6d6;
+  font-size: 1.4em;
+  padding-top: 2em;
+}
+
+.node-media-gallery .text-format-wrapper .filter-wrapper {
+  display: none;
+}
+
+
+/*
+ * Specific pages
+ */
+
+/* User login */
+
+.front.not-logged-in .region-content h1 {
+  font-size: 1.5em;
+}
+
